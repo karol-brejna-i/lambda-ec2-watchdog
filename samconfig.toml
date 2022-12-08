@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "watchdog-puppy"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-tzdqvquuxth5"
+s3_prefix = "watchdog-puppy"
+region = "eu-west-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "TopicName=\"example\""
+image_repositories = []
