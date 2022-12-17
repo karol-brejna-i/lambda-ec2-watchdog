@@ -1,4 +1,4 @@
-import { EC2Client, DescribeInstancesCommand } from "@aws-sdk/client-ec2";
+import { EC2Client, DescribeInstancesCommand, CreateTagsCommand } from "@aws-sdk/client-ec2";
 
 const awsRegion = process.env.AWS_REGION;
 const topicArn = process.env.SNStopic;
@@ -96,7 +96,37 @@ const handler = async (event) => {
  * A Lambda function that logs the payload received from a CloudWatch scheduled event.
  */
 const scheduledEventLoggerHandler = async (event) => {
-  console.log("new method");
+  console.log("Scheduled Lambda");
 }
 
-export { handler, scheduledEventLoggerHandler };
+const autoTag = async (event) => {
+  console.info("NEW Lambda Handler");
+  console.debug(JSON.stringify(event));
+
+  const instanceId = event.detail['instance-id'];
+  console.info(`InstanceId ${instanceId}`);
+
+  const tagParams = {
+      Resources: [instanceId],
+      Tags: [{
+          Key: "Name",
+          Value: "SDK Sample",
+      }, ],
+  };
+  try {
+      await ec2Client.send(new CreateTagsCommand(tagParams));
+      console.log("Instance tagged");
+  }
+  catch (err) {
+      console.log("Error", err);
+  }
+
+  const response = {
+      statusCode: 200,
+      body: JSON.stringify('Hello from Lambda!'),
+  };
+  return response;
+};
+
+
+export { handler, scheduledEventLoggerHandler, autoTag };
