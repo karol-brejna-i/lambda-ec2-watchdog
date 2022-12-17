@@ -1,14 +1,18 @@
-import { EC2Client, DescribeInstancesCommand, CreateTagsCommand } from "@aws-sdk/client-ec2";
+import { EC2Client, DescribeInstancesCommand, CreateTagsCommand, DescribeTagsCommand } from "@aws-sdk/client-ec2";
+
 
 const awsRegion = process.env.AWS_REGION;
 const topicArn = process.env.SNStopic;
+const DEFAULT_TTL_VALUE = process.env.DEFAULT_TTL_VALUE || '0';
 console.info(`Region: ${awsRegion}; topicArn: ${topicArn}`);
+
 
 // initialize ec2 client
 const ec2Client = new EC2Client({ region: awsRegion });
 
 /**
- * Function that list EC2 instances with specific tag-key
+ * Function that list EC2 instances with specific tag-key.
+ * 
  * @param {string} tagKey - tag name
  * @param {string} state - 
  *          instance-state-name - The state of the instance (pending | running | shutting-down | terminated | stopping | stopped). 
@@ -36,7 +40,8 @@ const listEC2 = async (tagKey, state) => {
 }
 
 /**
- * Return lighter instance descriptions (only containing essential data)
+ * Return lighter instance descriptions, containing only essential data (from the perspective of further processing).
+ * 
  * @param {*} runningInstancesWithTTL 
  * @returns 
  */
@@ -63,7 +68,7 @@ const createDescriptions = async (runningInstancesWithTTL) => {
  *
  * @param {*} event
  */
-const handler = async (event) => {
+const watcher = async (event) => {
   console.log("Lambda invoked.");
 
   // Get EC2 instances 
@@ -91,6 +96,18 @@ const handler = async (event) => {
   return result;
 }
 
+const getInstanceTags = async (instanceId) => {
+    const command = new DescribeTagsCommand({
+        Filters: [
+            {
+                Name: "resource-id",
+                Values: [instanceId],
+            },
+        ],
+    });
+    const data = await ec2Client.send(command);
+    return data.Tags;
+}
 
 /**
  * A Lambda function that logs the payload received from a CloudWatch scheduled event.
@@ -99,6 +116,10 @@ const scheduledEventLoggerHandler = async (event) => {
   console.log("Scheduled Lambda");
 }
 
+
+/**
+ * Tag newly created EC2 instances with TTL (if the tag doesn't already exists).
+ */
 const autoTag = async (event) => {
   console.info("NEW Lambda Handler");
   console.debug(JSON.stringify(event));
@@ -107,26 +128,55 @@ const autoTag = async (event) => {
   console.info(`InstanceId ${instanceId}`);
 
   const tagParams = {
-      Resources: [instanceId],
-      Tags: [{
-          Key: "Name",
-          Value: "SDK Sample",
-      }, ],
+    Resources: [instanceId],
+    Tags: [
+      { Key: "TTL", Value: DEFAULT_TTL_VALUE }
+    ]
   };
+
+  // TODO: first check if the TTL tag is already set!
+  const tagsResponse = await getInstanceTags(instanceId);
+  console.info(`${instanceId} tags: ${JSON.stringify(tagsResponse)}`);
+  console.info(tagsResponse);
+
+  // tagResponse holds object like:
+  //[
+  // {
+  //   Key: 'Name',
+  //   ResourceId: 'i-053733ded3564ceb4',
+  //   ResourceType: 'instance',
+  //   Value: 'test2'
+  // },
+  // {
+  //   Key: 'TTL',
+  //   ResourceId: 'i-053733ded3564ceb4',
+  //   ResourceType: 'instance',
+  //   Value: '1'
+  // }
+  //]
+  
+
+  // Tag the instance
   try {
-      await ec2Client.send(new CreateTagsCommand(tagParams));
-      console.log("Instance tagged");
+    await ec2Client.send(new CreateTagsCommand(tagParams));
+    console.log("Instance tagged");
   }
   catch (err) {
-      console.log("Error", err);
+    console.error("Error", err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: err,
+        stack: err.stack
+      })
+    };
   }
 
-  const response = {
-      statusCode: 200,
-      body: JSON.stringify('Hello from Lambda!'),
+  return {
+    statusCode: 200,
+    body: JSON.stringify('Hello from Lambda!'),
   };
-  return response;
 };
 
 
-export { handler, scheduledEventLoggerHandler, autoTag };
+export { watcher, scheduledEventLoggerHandler, autoTag };

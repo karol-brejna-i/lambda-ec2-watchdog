@@ -43,7 +43,7 @@ Resources:
     Properties:
       Description: !Sub
         - Stack ${AWS::StackName} Function ${ResourceName}
-        - ResourceName: Function    
+        - ResourceName: TagInstanceFunction    
       CodeUri: src/
       Handler: app.autoTag
       Runtime: nodejs18.x
@@ -58,13 +58,8 @@ Resources:
             Effect: Allow
             Action:
               - ec2:CreateTags
-            Resource: "*"
-
-        # these are copy-paste permissions
-        # we need to add permission to createtags
-        # there seems not to be any existing policy template
-        # see for other ways to add permissions to lambda https://aws.amazon.com/premiumsupport/knowledge-center/lambda-sam-template-permissions/
-
+              - ec2:DescribeTags
+            Resource: "*"            
         # permissions for tagging: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/supported-iam-actions-tagging.html 
         # (includes conditional permissions, for specific tags only)
 
@@ -77,18 +72,11 @@ Resources:
       Principal: !Sub events.${AWS::URLSuffix}
       SourceArn: !GetAtt InstanceStateChangeRule.Arn
 
-      # embedded event https://stackoverflow.com/questions/59047116/aws-sam-lambda-function-trigger-from-cloudwatch-rule
-      # defining rule resource as above with targets, didn't work; maybe it is the matter of yet another permission;
-      # oh! they have the rule defined as a resource, than they kind-of refer to it in Events section of the lambda
-      # also, I already have CloudWatchEvent in scheduled lambda (with no associated rule as a resource defined). maybe there is equivalent for change-state event
-
-      # https://aws.amazon.com/premiumsupport/knowledge-center/eventbridge-lambda-not-triggered/
-
   TopicPublisherFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: app.handler
+      Handler: app.watcher
       Runtime: nodejs18.x
       MemorySize: 128
       Environment:

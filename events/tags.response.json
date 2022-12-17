@@ -1,0 +1,12 @@
+{
+  "$metadata": {
+    "httpStatusCode": 200,
+    "requestId": "3ae7d010-457f-4ce4-a999-178b326b08f1",
+    "attempts": 1,
+    "totalRetryDelay": 0
+  },
+  "Tags": [
+    { "Key": "Name", "ResourceId": "i-04931a298dd9ee1f9", "ResourceType": "instance", "Value": "test2" },
+    { "Key": "TTL", "ResourceId": "i-04931a298dd9ee1f9", "ResourceType": "instance", "Value": "2" }
+  ]
+}
