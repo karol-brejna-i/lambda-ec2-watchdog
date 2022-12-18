@@ -1,11 +1,9 @@
 import { EC2Client, DescribeInstancesCommand, CreateTagsCommand, DescribeTagsCommand } from "@aws-sdk/client-ec2";
 
-
 const awsRegion = process.env.AWS_REGION;
 const topicArn = process.env.SNStopic;
 const DEFAULT_TTL_VALUE = process.env.DEFAULT_TTL_VALUE || '0';
 console.info(`Region: ${awsRegion}; topicArn: ${topicArn}`);
-
 
 // initialize ec2 client
 const ec2Client = new EC2Client({ region: awsRegion });
@@ -40,6 +38,24 @@ const listEC2 = async (tagKey, state) => {
 }
 
 /**
+ * Get instance's tags.
+ * @param {*} instanceId 
+ * @returns 
+ */
+const getInstanceTags = async (instanceId) => {
+  const command = new DescribeTagsCommand({
+    Filters: [
+      {
+        Name: "resource-id",
+        Values: [instanceId],
+      },
+    ],
+  });
+  const data = await ec2Client.send(command);
+  return data.Tags;
+}
+
+/**
  * Return lighter instance descriptions, containing only essential data (from the perspective of further processing).
  * 
  * @param {*} runningInstancesWithTTL 
@@ -64,12 +80,12 @@ const createDescriptions = async (runningInstancesWithTTL) => {
 }
 
 /**
- * 
+ * Go through running EC2 instances and check if they have expired TTL.
  *
  * @param {*} event
  */
 const watcher = async (event) => {
-  console.log("Lambda invoked.");
+  console.log("Watcher lambda invoked.");
 
   // Get EC2 instances 
   const reservationsResponse = await listEC2("TTL", "running");
@@ -89,39 +105,18 @@ const watcher = async (event) => {
   const instanceDescriptions = await createDescriptions(runningInstancesWithTTL)
   console.debug(instanceDescriptions);
 
-  // find instanceDescription with TTL
+  // find instances that exceeded TTL
   const exceededTimes = instanceDescriptions.filter(instance => instance.overTime > 0);
   console.info('Instances with exceedes running time:', JSON.stringify(exceededTimes));
   const result = { statusCode: 200, body: exceededTimes };
   return result;
 }
 
-const getInstanceTags = async (instanceId) => {
-    const command = new DescribeTagsCommand({
-        Filters: [
-            {
-                Name: "resource-id",
-                Values: [instanceId],
-            },
-        ],
-    });
-    const data = await ec2Client.send(command);
-    return data.Tags;
-}
-
-/**
- * A Lambda function that logs the payload received from a CloudWatch scheduled event.
- */
-const scheduledEventLoggerHandler = async (event) => {
-  console.log("Scheduled Lambda");
-}
-
-
 /**
  * Tag newly created EC2 instances with TTL (if the tag doesn't already exists).
  */
 const autoTag = async (event) => {
-  console.info("NEW Lambda Handler");
+  console.info("Auto-tagging lambda invoked.");
   console.debug(JSON.stringify(event));
 
   const instanceId = event.detail['instance-id'];
@@ -134,34 +129,23 @@ const autoTag = async (event) => {
     ]
   };
 
-  // TODO: first check if the TTL tag is already set!
-  const tagsResponse = await getInstanceTags(instanceId);
-  console.info(`${instanceId} tags: ${JSON.stringify(tagsResponse)}`);
-  console.info(tagsResponse);
-
-  // tagResponse holds object like:
-  //[
-  // {
-  //   Key: 'Name',
-  //   ResourceId: 'i-053733ded3564ceb4',
-  //   ResourceType: 'instance',
-  //   Value: 'test2'
-  // },
-  // {
-  //   Key: 'TTL',
-  //   ResourceId: 'i-053733ded3564ceb4',
-  //   ResourceType: 'instance',
-  //   Value: '1'
-  // }
-  //]
-  
-
   // Tag the instance
   try {
-    await ec2Client.send(new CreateTagsCommand(tagParams));
-    console.log("Instance tagged");
-  }
-  catch (err) {
+    //check if the TTL tag is already set!
+    const tags = await getInstanceTags(instanceId);
+    console.info(`${instanceId} tags: ${JSON.stringify(tags)}`);
+
+    const ttlTag = tags.find((tag) => tag.Key === "TTL");
+
+    if (!ttlTag) {
+      console.info(`Tagging ${instanceId}`);
+      const tagResponse = await ec2Client.send(new CreateTagsCommand(tagParams));
+      console.debug(tagResponse);
+      console.log("Instance tagged");
+    } else {
+      console.info(`TTL tag already exists for ${instanceId}`);
+    }
+  } catch (err) {
     console.error("Error", err);
     return {
       statusCode: 500,
@@ -179,4 +163,4 @@ const autoTag = async (event) => {
 };
 
 
-export { watcher, scheduledEventLoggerHandler, autoTag };
+export { watcher, autoTag };

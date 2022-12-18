@@ -42,11 +42,13 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Description: !Sub
-        - Stack ${AWS::StackName} Function ${ResourceName}
+        - Stack ${AWS::StackName} Function ${ResourceName}. Tags a newly created EC2 instance with TTL tag (if it doesn't already exist).
         - ResourceName: TagInstanceFunction    
       CodeUri: src/
       Handler: app.autoTag
       Runtime: nodejs18.x
+      Architectures:
+        - x86_64
       MemorySize: 128
       Environment:
         Variables:
@@ -75,28 +77,15 @@ Resources:
   TopicPublisherFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}. Periodically checks if running EC2 instances reached their TTL (based on TTL tag and launch date).
+        - ResourceName: TagInstanceFunction
       CodeUri: src/
       Handler: app.watcher
-      Runtime: nodejs18.x
-      MemorySize: 128
-      Environment:
-        Variables:
-          SNStopic: !Ref MySnsTopic
-      Policies:
-        - SNSPublishMessagePolicy:
-            TopicName: !GetAtt MySnsTopic.TopicName
-        - EC2DescribePolicy: {}
-
-  ScheduledEventLogger:
-    Type: AWS::Serverless::Function
-    Properties:
-      Description: A Lambda function that logs the payload of messages sent to an associated SQS queue.
       Runtime: nodejs18.x
       Architectures:
         - x86_64
       MemorySize: 128
-      CodeUri: src/
-      Handler: app.scheduledEventLoggerHandler
       Environment:
         Variables:
           SNStopic: !Ref MySnsTopic
@@ -108,7 +97,7 @@ Resources:
         CloudWatchEvent:
           Type: Schedule
           Properties:
-            Schedule: rate(1 hour)
+            Schedule: rate(30 minutes)
 
 Outputs:
   TopicPublisherFunction:
