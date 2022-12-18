@@ -14,39 +14,78 @@ Parameters:
     Type: String
     Description: Github issued OAuth client ID
 
-
 Resources:
   # Define the SNS topic
   MySnsTopic:
     Type: AWS::SNS::Topic
     Properties:
-      TopicName: 'ExampleTopic'
+      TopicName: "ExampleTopic"
 
-  TopicPublisherFunction:
+  InstanceStateChangeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - aws.ec2
+        detail-type:
+          - EC2 Instance State-change Notification
+        detail:
+          state:
+            - pending
+            - running
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt TagInstanceFunction.Arn
+          Id: !Ref TagInstanceFunction
+
+  TagInstanceFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}. Tags a newly created EC2 instance with TTL tag (if it doesn't already exist).
+        - ResourceName: TagInstanceFunction    
       CodeUri: src/
-      Handler: app.handler
+      Handler: app.autoTag
       Runtime: nodejs18.x
+      Architectures:
+        - x86_64
       MemorySize: 128
       Environment:
         Variables:
           SNStopic: !Ref MySnsTopic
       Policies:
-        - SNSPublishMessagePolicy:
-            TopicName: !GetAtt MySnsTopic.TopicName
         - EC2DescribePolicy: {}
+        - Statement: 
+          - Sid: TagEC2Policy
+            Effect: Allow
+            Action:
+              - ec2:CreateTags
+              - ec2:DescribeTags
+            Resource: "*"            
+        # permissions for tagging: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/supported-iam-actions-tagging.html 
+        # (includes conditional permissions, for specific tags only)
 
-  ScheduledEventLogger:
+  MyLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt TagInstanceFunction.Arn
+      # Principal: "events.amazonaws.com"
+      Principal: !Sub events.${AWS::URLSuffix}
+      SourceArn: !GetAtt InstanceStateChangeRule.Arn
+
+  TopicPublisherFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Description: A Lambda function that logs the payload of messages sent to an associated SQS queue.
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}. Periodically checks if running EC2 instances reached their TTL (based on TTL tag and launch date).
+        - ResourceName: TagInstanceFunction
+      CodeUri: src/
+      Handler: app.watcher
       Runtime: nodejs18.x
       Architectures:
         - x86_64
       MemorySize: 128
-      CodeUri: src/
-      Handler: app.scheduledEventLoggerHandler
       Environment:
         Variables:
           SNStopic: !Ref MySnsTopic
@@ -58,12 +97,16 @@ Resources:
         CloudWatchEvent:
           Type: Schedule
           Properties:
-            Schedule: rate(5 minutes)
+            Schedule: rate(30 minutes)
 
 Outputs:
   TopicPublisherFunction:
     Description: TopicPublisherFunction function name
     Value: !Ref TopicPublisherFunction
+
+  TagInstanceFunction:
+    Description: TagInstanceFunction function name
+    Value: !Ref TagInstanceFunction
 
   SNStopicName:
     Description: SNS topic name

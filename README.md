@@ -7,13 +7,13 @@ This makes it easeier to understand the intent of the project and to manage the 
 
 **The goal** of the code is to find out running EC2 instances that are "supsected" to overrun their expected lifetime. This way the users can be notified about that fact and react accordingly to avoid excesseve costs (the code could be also automatically terminating the instances, but this option is not included).
 
-The key assumption here is: 
-- whenever an EC2 insance is created, it is tagged with time-to-live value (hours).
+The key assumption here is that whenever an EC2 insance is created, it is tagged with time-to-live value (hours).
+To make sure it happens, this PoC includes a dedicated lambda function [autoTag](src/app.mjs?plain=1#L122)
 
-The code simply periodically browses thorugh the running instances and determines if they are running longer then expected TTL.
+The code simply periodically browses thorugh the running instances and determines if they are running longer then expected (based on TTL tag value and their launch time).
 
 
-
+## Mechanics
 The AWS SAM template deploys the resources and the IAM permissions required to run the application.
 
 Learn more about this pattern at Serverless Land Patterns: https://serverlessland.com/patterns/lambda-sns/.
